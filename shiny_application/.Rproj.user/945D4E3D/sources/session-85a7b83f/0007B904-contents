@@ -1,0 +1,946 @@
+
+library(shiny)      
+library(shinythemes)
+library(ggplot2)    
+library(DT)     
+library(tidyverse)
+library(bslib) 
+library(dplyr)
+library(XLConnect) 
+library(sf) 
+library(rnaturalearth)
+library(RColorBrewer)
+library(plotly)
+
+
+#do mapki
+
+#tidyverse_packages(include_self = TRUE)
+
+
+ui <- tagList(
+  shinythemes::themeSelector(),
+  navbarPage(
+    "Aplikacja",
+    
+    #============================================= Dane ===========================================================
+    tabPanel("Dane",
+             titlePanel(h1("Dane", align = "center")),
+             
+             sidebarLayout(
+               sidebarPanel(
+                 
+                 conditionalPanel(
+                   'input.dataset === "Wskaźnik HDI"',
+                   checkboxGroupInput("show_vars1", "Wybierz kolumny:",
+                                      names(Wskaznik_HDI), selected = names(Wskaznik_HDI)),
+                   helpText("Opis danych: Wskaźnik rozowju społecznego HDI.", 
+                            "Ocenia kraje na 3 płaszczyznach: długie i zdrowe życie,",
+                            "wiedza, dostatni standard życia.",
+                            "Kraje ze wskaźnikiem co najmniej 0,710 uważa się za wysoko rozwinięte,",
+                            "a poniżej 0,536 za rozwinięte słabo.")
+                 ),
+                 
+                 conditionalPanel(
+                   'input.dataset === "PKB na mieszkańca"',
+                   checkboxGroupInput("show_vars2", "Wybierz kolumny:",
+                                      names(PKB_na_mieszkanca), selected = names(PKB_na_mieszkanca)),
+                   helpText("Opis danych: Wskaźnik liczony jest jako stosunek realnego PKB",
+                            "do średniej liczby ludności w danym roku.",
+                            "PKB mierzy wartość całkowitej końcowej produkcji",
+                            "towarów i usług wytworzonych przez gospodarkę w określonym czasie.")
+                 ),
+                 conditionalPanel(
+                   'input.dataset === "Współczynnik Giniego"',
+                   checkboxGroupInput("show_vars3", "Wybierz kolumny:",
+                                      names(Wspolczynnik_Giniego), selected = names(Wspolczynnik_Giniego)),
+                   helpText("Opis danych: Współczynnik Giniego (Wskaźnik Nierówności Społecznej)",
+                            "- im wartość wyższa dla danego kraju,",
+                            "tym większe rozwarstwienie społeczne w nim panuje.")
+                 ),
+                 conditionalPanel(
+                   'input.dataset === "Śmiertelność niemowląt"',
+                   checkboxGroupInput("show_vars4", "Wybierz kolumny:",
+                                      names(Smiertelnosc_niemowlat), selected = names(Smiertelnosc_niemowlat)),
+                   helpText("Opis danych: Stosunek liczby zgonów dzieci poniżej 1 roku życia w ciągu roku",
+                            "do liczby urodzeń żywych w tym roku. Wartość wyrażona jest na 1000 urodzeń żywych.")
+                 ),
+                 conditionalPanel(
+                   'input.dataset === "Ogólne szczęście"',
+                   checkboxGroupInput("show_vars5", "Wybierz kolumny:",
+                                      names(Ogolne_szczescie), selected = names(Ogolne_szczescie)),
+                   helpText("Opis danych: Dane pochodzące z ankiety dot. szczęścia globalnego. Wskaźnik obliczony",
+                            "według oceny zadowolenia m.in. zdrowotnego, politycznego, ekonomicznego oraz rodzinnego.")
+                 ),
+                 width = 3
+                 
+                 
+                 
+               ),
+               mainPanel(
+                 
+                 tabsetPanel(
+                   
+                   id = 'dataset',
+                   tabPanel("Wskaźnik HDI", DT::dataTableOutput("mytable1")),
+                   tabPanel("PKB na mieszkańca", DT::dataTableOutput("mytable2")),
+                   tabPanel("Współczynnik Giniego", DT::dataTableOutput("mytable3")),
+                   tabPanel("Śmiertelność niemowląt", DT::dataTableOutput("mytable4")),
+                   tabPanel("Ogólne szczęście", DT::dataTableOutput("mytable5"))
+                 ),
+                 width = 9
+               ))
+    ),
+    
+    #============================================== Podstawowe statystyki =========================================================
+    
+    navbarMenu("Podstawowe statystyki",
+               #dla lat ogolem
+               tabPanel("statystyki ogółem",
+                        titlePanel(h1("Statystyki ogółem", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets", "Wybierz dane:",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                            
+                            numericInput("obs", "Liczba obserwacji:", 10),
+                            
+                            
+                            helpText("Uwaga: Zmiana obserwacji wpływa jedynie na ilość", 
+                                     "wyświetlanych danych, a nie na liczone statystyki."),
+                            
+                            actionButton("update", "Policz"),
+                            
+                            
+                            
+                            
+                            width = 3
+                          ),
+                          
+                          mainPanel(
+                            
+                            
+                            h4("Podsumowanie"),
+                            verbatimTextOutput("summary"),
+                            
+                            h4("Obserwacje"),
+                            tableOutput("view"),
+                            
+                            
+                            
+                            
+                            width = 8
+                          )
+                        )),
+               
+               tabPanel("statystyki dla regionów",
+                        titlePanel(h1("Statystyki dla regionów", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets.data", "Wybierz dane:",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                            
+                            
+                            
+                            selectInput("regions", "Wybierz region:",
+                                        choices = c("Europa północna", "Europa południowa", "Europa środkowa", "Europa wschodnia", "Europa zachodnia")),
+                            
+                            numericInput("obs.reg", "Liczba obserwacji:", 15),
+                            
+                            helpText("Uwaga: Zmiana obserwacji wpływa jedynie na ilość", 
+                                     "wyświetlanych danych, a nie na liczone statystyki."),
+                            
+                            actionButton("update.data", "Policz dla regionu",  style="margin-bottom: 10px;"),
+                            
+                            downloadButton("downloadData", "Pobierz dane dla regionu", style="margin-bottom: 10px;"),
+                            width = 3
+                          ),
+                          
+                          mainPanel(
+                            
+                            
+                            h4("Podsumowanie"),
+                            verbatimTextOutput("summary.reg"),
+                            
+                            h4("Obserwacje"),
+                            tableOutput("view.reg"),
+                            
+                            width = 8
+                          )
+                        ))
+    ),
+    
+    
+    #============================================= Wykresy ===========================================================
+    
+    navbarMenu("Wykresy",
+               tabPanel("Histogram",
+                        titlePanel(h1("Histogram", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets1", "Wybierz dane:",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                        
+                            actionButton("update1", "Zaktualizuj dane", style="margin-bottom: 14px;"),
+                            
+                            helpText("Uwaga: Po zmianie wskaźnika należy zaktualizować dane klikając w powyższy przycisk"),
+                            
+                            selectInput("regions1", "Wybierz region:",
+                                        choices = c("Europa północna", "Europa południowa", "Europa środkowa", "Europa wschodnia", "Europa zachodnia")),
+                            
+                            
+                            selectInput("var1", "Wybierz kolumny:",
+                                        choices = c("rok.2012"=1,"rok.2013"=2,"rok.2014"=3,"rok.2015"=4, 
+                                                    "rok.2016"=5, "rok.2017"=6, "rok.2018"=7, "rok.2019"=8, 
+                                                    "rok.2020"=9, "rok.2021"=10)),
+                            
+                            sliderInput("bin", "Wybierz liczbę pojemnikow na histogramie:", min=5, max=25, value=15),
+                            
+                            radioButtons("colour1", label = "Wybierz kolor histogramu:",
+                                         choices =  c("Zielony"="Green", "Czerwony"="Red",
+                                                      "Żółty"="Yellow"), selected = "Green"),
+                            
+                            
+                            
+                            
+                            
+                            width = 3
+                          ),
+                          
+                          mainPanel(
+                            
+                            
+                            plotOutput("hist"),
+                            plotOutput("hist.reg")
+                            
+                            
+                          )
+                          
+                        )),
+               tabPanel("Wykres pudełkowy",
+                        titlePanel(h1("Wykres pudełkowy", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets2", "Wybierz dane:",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                            actionButton("update2", "Zaktualizuj dane", style="margin-bottom: 14px;"),
+                            
+                            helpText("Uwaga: Po zmianie wskaźnika należy zaktualizować dane klikając w powyższy przycisk"),
+                            
+                            selectInput("regions2", "Wybierz region:",
+                                        choices = c("Europa północna", "Europa południowa", "Europa środkowa", "Europa wschodnia", "Europa zachodnia")),
+                            
+                            
+                            radioButtons("colour2", label = "Wybierz kolor wykresu pudełkowego:",
+                                         choices =  c("Zielony"="Green", "Czerwony"="Red",
+                                                      "Żółty"="Yellow"), selected = "Green"),
+                            
+                            
+                            
+                            width = 3
+                          ),
+                          
+                          
+                          mainPanel(
+                            
+                            plotOutput("boxplot"),
+                            plotOutput("boxplot.reg")
+                          )
+                          
+                        )),
+               
+               tabPanel("Wykres słupkowy",
+                        titlePanel(h1("Wykres słupkowy", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets3", "Wybierz dane:",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                            actionButton("update3", "Zaktualizuj dane", style="margin-bottom: 14px;"),
+                            
+                            helpText("Uwaga: Po zmianie wskaźnika należy zaktualizować dane klikając w powyższy przycisk"),
+                            
+                            selectInput("regions3", "Wybierz region:",
+                                        choices = c("Europa północna", "Europa południowa", "Europa środkowa", "Europa wschodnia", "Europa zachodnia")),
+                            
+                            selectInput("var3", "Wybierz kolumny:",
+                                        choices = c("rok.2012"=1,"rok.2013"=2,"rok.2014"=3,"rok.2015"=4, 
+                                                    "rok.2016"=5, "rok.2017"=6, "rok.2018"=7, "rok.2019"=8, 
+                                                    "rok.2020"=9, "rok.2021"=10)),
+                            radioButtons("colour3", label = "Wybierz kolor wykresu słupkowego:",
+                                         choices =  c("Zielony"="Green", "Czerwony"="Red",
+                                                      "Żółty"="Yellow"), selected = "Green"),
+                          
+                            width = 3
+                          ),
+                          
+                          
+                          mainPanel(
+                            
+                            
+                            plotOutput("barplot"),
+                            plotOutput("barplot.reg")
+                            
+                          ) 
+                        )),
+              
+               
+               tabPanel("Wykres korelacji",
+                        titlePanel(h1("Wykres korelacji", align = "center")),
+                        
+                        sidebarLayout(
+                          
+                          sidebarPanel(
+                            selectInput("datasets.k", "Wybierz dane 1 (współrzędna x):",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            # uiOutput("target_var"),
+                            
+                            selectInput("datasets.k2", "Wybierz dane 2 (współrzędna y):",
+                                        choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                            
+                            actionButton("update.k", "Zaktualizuj dane", style="margin-bottom: 14px;"),
+                            
+                            helpText("Uwaga: Po zmianie wskaźnika należy zaktualizować dane klikając w powyższy przycisk"),
+                            
+                            selectInput("var.k", "Wybierz kolumny:",
+                                        choices = c("rok.2012"=1,"rok.2013"=2,"rok.2014"=3,"rok.2015"=4, 
+                                                    "rok.2016"=5, "rok.2017"=6, "rok.2018"=7, "rok.2019"=8, 
+                                                    "rok.2020"=9, "rok.2021"=10)),
+                            radioButtons("colour.k", label = "Wybierz kolor wykresu:",
+                                         choices = c("Zielony"="Green", "Czerwony"="Red",
+                                                     "Żółty"="Yellow"), selected = "Green"),
+                    
+                            
+                            width = 3
+                          ),
+                          
+                          
+                          mainPanel(
+                            
+                            
+                            tags$style(type='text/css', '#correlation {background-color: rgba(0,0,255,0.10); color: blue; font-size: 18px; 
+                                       }'),
+                            
+                           
+                            #span(textOutput("correlation"), style="font-size:18px; color: red;"),
+                            
+                            plotOutput("correlationplot", height = 620, width="85%"),
+                            
+                            h4("Współczynnik korelacji Pearsona:"),
+                            verbatimTextOutput("correlation")
+                          )
+                        ))
+               
+    ),
+    
+    tabPanel("Mapa",
+             titlePanel(h1("Mapa", align = "center")),
+             
+             sidebarLayout(
+               
+               sidebarPanel(
+                 selectInput("datasets5", "Wybierz dane:",
+                             choices = c("Wskaźnik HDI", "PKB na mieszkańca", "Współczynnik Giniego", "Śmiertelność niemowląt", "Ogólne szczęście")),
+                 
+                 actionButton("update5", "Zaktualizuj dane", style="margin-bottom: 10px;"),
+                 
+                 helpText("Uwaga: Po zmianie wskaźnika należy zaktualizować dane klikając w powyższy przycisk"),
+                 
+                 selectInput("var5", "Wybierz kolumny:",
+                             choices = c("rok.2012"=1,"rok.2013"=2,"rok.2014"=3,"rok.2015"=4, 
+                                         "rok.2016"=5, "rok.2017"=6, "rok.2018"=7, "rok.2019"=8, 
+                                         "rok.2020"=9, "rok.2021"=10)),
+                 
+              
+                 radioButtons("colour5", label = "Wybierz kolor mapy:",
+                              choices = c("Zielony"="Greens", "Czerwony"="Reds",
+                                          "Niebieski"="Blues"), selected = "Greens"),
+                 
+                 width = 3
+               ),
+               
+               
+               mainPanel(
+                 
+                 plotlyOutput("map", width = "100%", height = 820)
+                 
+               )
+             ))
+    
+    
+    
+    
+    
+    
+  )
+)
+
+server <- function(input, output, session) {
+  
+  #================================================== Dane ========================================================
+  
+  output$mytable1 <- DT::renderDataTable({
+    DT::datatable(Wskaznik_HDI[, input$show_vars1, drop = FALSE],                        # choose columns to display
+                  options = list(lengthMenu = c(10, 20, 30, 40), pageLength = 10))  # customize the length drop-down menu;
+  })
+  
+  output$mytable2 <- DT::renderDataTable({
+    DT::datatable(PKB_na_mieszkanca[, input$show_vars2, drop = FALSE], 
+                  options = list(lengthMenu = c(10, 20, 30, 40), pageLength = 10))
+  })
+  
+  output$mytable3 <- DT::renderDataTable({
+    DT::datatable(Wspolczynnik_Giniego[, input$show_vars3, drop = FALSE], 
+                  options = list(lengthMenu = c(10,20, 30, 40), pageLength = 10)) 
+  })
+  
+  output$mytable4 <- DT::renderDataTable({
+    DT::datatable(Smiertelnosc_niemowlat[, input$show_vars4, drop = FALSE], 
+                  options = list(lengthMenu = c(10,20,30,40), pageLength = 10))
+  })
+  
+  output$mytable5 <- DT::renderDataTable({
+    DT::datatable(Ogolne_szczescie[, input$show_vars5, drop = FALSE], 
+                  options = list(lengthMenu = c(10,20, 30, 40), pageLength = 10))
+  })
+  
+  #============================================== Podstawowe statystyki =======================================
+  
+  # wzgledem lat
+  
+  datasetInput <- eventReactive(input$update, {
+    switch(input$datasets,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie
+    )
+  }, ignoreNULL = FALSE)
+  
+  
+ 
+  output$summary <- renderPrint({
+    datasets <- datasetInput()
+    datasets <- na.omit(datasets)
+    datasets_val <- datasets[,c(2:ncol(datasets))]
+    
+    
+    options(digits=3)
+    summary(datasets_val)
+    
+  })
+  output$view <- renderTable({
+    head(datasetInput(), n = isolate(input$obs))
+  })
+  
+  
+  
+  
+  
+  
+  # wzgledem poszczegolnych panstw
+  datasetInput_data <- eventReactive(input$update.data, {
+    switch(input$datasets.data,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie
+    ) 
+  }, ignoreNULL = FALSE)
+  
+  
+  output$summary.reg <- renderPrint({
+    datasets.index <- datasetInput_data()
+    datasets.index <- na.omit(datasets.index)
+    
+    EU_zachodnia <- datasets.index %>% filter(region %in% c('Belgium', 'Netherlands', 'Luxembourg',
+                                                              'UK', 'Ireland', 'France'))
+    EU_srodkowa <- datasets.index %>% filter(region %in% c('Austria', 'Czech Republic', 'Germany', 'Hungary',
+                                                             'Liechtenstein', 'Poland', 'Slovakia', 'Slovenia', 'Switzerland'))
+    EU_polnocna <- datasets.index %>% filter(region %in% c('Finland', 'Sweden', 'Iceland', 'Norway',
+                                                             'Denmark' ))
+    EU_wschodnia <- datasets.index %>% filter(region %in% c('Belarus', 'Bulgaria', 'Estonia', 'Lithuania', 'Latvia', 'Moldova',
+                                                              'Romania', 'Ukraine' ))
+    EU_poludniowa <- datasets.index %>% filter(region %in% c('Albania', 'Andorra', 'Bosnia and Herzegovina', 'Croatia', 'Greece', 
+                                                               'Spain', 'North Macedonia', 'Malta', 'Monaco', 'Italy', 'Cyprus', 'Kosovo',
+                                                               'Montenegro', 'Portugal', 'San Marino', 'Serbia', 'Turkey', 'Vatican'))
+    
+    datasetInput_reg <- eventReactive(input$update.data, {
+      switch(input$regions,
+             "Europa zachodnia" = EU_zachodnia,
+             "Europa środkowa" = EU_srodkowa,
+             "Europa północna" = EU_polnocna,
+             "Europa wschodnia" = EU_wschodnia,
+             "Europa południowa" = EU_poludniowa
+      )
+    }, ignoreNULL = FALSE)
+    
+    datasets.reg <- datasetInput_reg()
+    datasets.reg <- na.omit(datasets.reg)
+    datasets.reg_val <- datasets.reg[,c(2:ncol(datasets.reg))]
+    
+    
+    output$view.reg <- renderTable({
+      head(datasetInput_reg(), n = isolate(input$obs.reg))
+    })
+    
+    output$downloadData <- downloadHandler(
+      filename = function(){
+        paste(input$regions,"xlsx",sep=".")
+      },
+      content = function(file) {
+        fname <- paste(input$regions,"xlsx",sep=".")
+        wb <- loadWorkbook(fname,create = TRUE)
+        createSheet(wb,"regions")
+        writeWorksheet(wb,data = datasetInput_reg(),sheet = "regions")
+        saveWorkbook(wb)
+        file.rename(fname,file)
+      },
+      contentType="application/xlsx"
+    )
+    
+    
+    
+    summary(datasets.reg_val)
+  })
+  
+  
+  
+  
+  
+  
+  #============================================== Wykresy =======================================
+  
+  #Histogram 
+  
+  datasetInput1 <- eventReactive(input$update1, {
+    switch(input$datasets1,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie_2012_2019
+    ) 
+  }, ignoreNULL = FALSE)
+  
+  
+  output$hist <- renderPlot({
+    datasets1 <- datasetInput1()
+    datasets1 <- na.omit(datasets1)
+    datasets1_val <- datasets1[,c(2:ncol(datasets1))]
+    colm =as.numeric(input$var1)
+    
+    hist(datasets1_val[,colm], col =input$colour1,
+         xlim = c(0, max(datasets1_val[,colm])),
+         main = paste(input$datasets1,"(ogółem)"),
+         breaks = seq(0, max(datasets1_val[,colm]),l=input$bin+1),
+         xlab = names(datasets1_val[colm]), ylab = "Liczba wystąpień"
+    )
+  }, height=415, width=1100)
+  
+  
+  
+  output$hist.reg <- renderPlot({
+    datasets1 <- datasetInput1()
+    datasets1 <- na.omit(datasets1)
+    datasets1_val <- datasets1[,c(2:ncol(datasets1))]
+    colm =as.numeric(input$var1)
+    
+    # GGPLOT2
+    
+    # datasets1_val %>%
+    #   ggplot( aes(x=datasets1_val[,colm])) +                                            
+    #   geom_histogram( breaks =seq(0, max(datasets1_val[,colm]),l=input$bin+1), 
+    #                   fill=input$colour1, color="black", alpha=0.7) +
+    #   xlab(names(datasets1_val[colm]))  +
+    #   xlim(c(0, max(datasets1_val[,colm]))) +
+    #   ggtitle("Histogram") +
+    #   theme_minimal()
+    
+    
+    EU_zachodnia <- datasets1 %>% filter(region %in% c('Belgium', 'Netherlands', 'Luxembourg',
+                                                       'UK', 'Ireland', 'France'))
+    EU_srodkowa <- datasets1 %>% filter(region %in% c('Austria', 'Czech Republic', 'Germany', 'Hungary',
+                                                      'Liechtenstein', 'Poland', 'Slovakia', 'Slovenia', 'Switzerland'))
+    EU_polnocna <- datasets1 %>% filter(region %in% c('Finland', 'Sweden', 'Iceland', 'Norway',
+                                                      'Denmark' ))
+    EU_wschodnia <- datasets1 %>% filter(region %in% c('Belarus', 'Bulgaria', 'Estonia', 'Lithuania', 'Latvia', 'Moldova',
+                                                       'Romania', 'Ukraine' ))
+    EU_poludniowa <- datasets1 %>% filter(region %in% c('Albania', 'Andorra', 'Bosnia and Herzegovina', 'Croatia', 'Greece', 
+                                                        'Spain', 'North Macedonia', 'Malta', 'Monaco', 'Italy', 'Cyprus', 'Kosovo',
+                                                        'Montenegro', 'Portugal', 'San Marino', 'Serbia', 'Turkey', 'Vatican'))
+    
+    datasetInput_reg <- eventReactive(input$update.reg1, {
+      switch(input$regions1,
+             "Europa zachodnia" = EU_zachodnia,
+             "Europa środkowa" = EU_srodkowa,
+             "Europa północna" = EU_polnocna,
+             "Europa wschodnia" = EU_wschodnia,
+             "Europa południowa" = EU_poludniowa
+      )
+    }, ignoreNULL = FALSE)
+    
+    datasets.reg <- datasetInput_reg()
+    datasets.reg <- na.omit(datasets.reg)
+    datasets.reg_val <- datasets.reg[,c(2:ncol(datasets.reg))]
+    
+    
+    
+    hist(datasets.reg_val[,colm], col =input$colour1,
+         xlim = c(0, max(datasets.reg_val[,colm])),
+         main = paste(input$datasets1,"-", input$regions1),
+         breaks = seq(0, max(datasets.reg_val[,colm]),l=input$bin+1),
+         xlab = names(datasets.reg_val[colm]), ylab = "Liczba wystąpień"
+    )
+    
+  }, height=405, width=1100)
+  
+  output$text1 <- renderText({ 
+    colm = as.numeric(input$var1)
+    paste("Data set variable/column name is", names(datasets1[colm]))
+    
+  })
+  
+  output$text2 <- renderText({ 
+    paste("Color of histogram is", input$radio)
+  })
+  
+  output$text3 <- renderText({ 
+    paste("Number of histogram BINs is", input$bin)
+  })
+  
+  
+  
+  
+  # output$hist <- renderPlot({
+  #   datasets1 <- datasetInput1()
+  #   datasets1 <- na.omit(datasets1)
+  #   datasets1_val <- datasets1[,c(2:ncol(datasets1))]
+  #   colm =as.numeric(input$var1)
+  #   
+  #   # GGPLOT2
+  #   
+  #   # datasets1_val %>%
+  #   #   ggplot( aes(x=datasets1_val[,colm])) +                                            
+  #   #   geom_histogram( breaks =seq(0, max(datasets1_val[,colm]),l=input$bin+1), 
+  #   #                   fill=input$colour1, color="black", alpha=0.7) +
+  #   #   xlab(names(datasets1_val[colm]))  +
+  #   #   xlim(c(0, max(datasets1_val[,colm]))) +
+  #   #   ggtitle("Histogram") +
+  #   #   theme_minimal()
+  #   
+  #   
+  #   hist(datasets1_val[,colm], col =input$colour1,
+  #        xlim = c(0, max(datasets1_val[,colm]) + max(datasets1_val[,colm]) * 0.2 ),
+  #        main = "Histogram",
+  #        breaks = seq(0, max(datasets1_val[,colm]),l=input$bin+1),
+  #        xlab = names(datasets1_val[colm]), ylab = "Liczba wystapien"
+  #   )
+  
+  
+  
+  
+  
+  #========= Wykres pudełkowy ==================================
+  
+  datasetInput2 <- eventReactive(input$update2, {
+    switch(input$datasets2,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie
+    )
+  }, ignoreNULL = FALSE)
+  
+  
+  
+  output$boxplot <- renderPlot({
+    datasets2 <- datasetInput2()
+    datasets2 <- na.omit(datasets2)
+    datasets2_val <- datasets2[,c(2:ncol(datasets2))]
+    
+    boxplot(datasets2_val,col = input$colour2,  main = paste(input$datasets2,"(ogółem)"),ylab="wartość")
+    
+  }, height=440, width=1100)
+  
+  
+  output$boxplot.reg <- renderPlot({
+    datasets2 <- datasetInput2()
+    datasets2 <- na.omit(datasets2)
+    datasets2_val <- datasets2[,c(2:ncol(datasets2))]
+    
+    EU_zachodnia <- datasets2 %>% filter(region %in% c('Belgium', 'Netherlands', 'Luxembourg',
+                                                       'UK', 'Ireland', 'France'))
+    EU_srodkowa <- datasets2 %>% filter(region %in% c('Austria', 'Czech Republic', 'Germany', 'Hungary',
+                                                      'Liechtenstein', 'Poland', 'Slovakia', 'Slovenia', 'Switzerland'))
+    EU_polnocna <- datasets2 %>% filter(region %in% c('Finland', 'Sweden', 'Iceland', 'Norway',
+                                                      'Denmark' ))
+    EU_wschodnia <- datasets2 %>% filter(region %in% c('Belarus', 'Bulgaria', 'Estonia', 'Lithuania', 'Latvia', 'Moldova',
+                                                       'Romania', 'Ukraine' ))
+    EU_poludniowa <- datasets2 %>% filter(region %in% c('Albania', 'Andorra', 'Bosnia and Herzegovina', 'Croatia', 'Greece', 
+                                                        'Spain', 'North Macedonia', 'Malta', 'Monaco', 'Italy', 'Cyprus', 'Kosovo',
+                                                        'Montenegro', 'Portugal', 'San Marino', 'Serbia', 'Turkey', 'Vatican'))
+    
+    datasetInput_reg <- eventReactive(input$update.reg2, {
+      switch(input$regions2,
+             "Europa zachodnia" = EU_zachodnia,
+             "Europa środkowa" = EU_srodkowa,
+             "Europa północna" = EU_polnocna,
+             "Europa wschodnia" = EU_wschodnia,
+             "Europa południowa" = EU_poludniowa
+      )
+    }, ignoreNULL = FALSE)
+    
+    datasets.reg <- datasetInput_reg()
+    datasets.reg <- na.omit(datasets.reg)
+    datasets.reg_val <- datasets.reg[,c(2:ncol(datasets.reg))]
+    
+    
+    boxplot(datasets.reg_val,col = input$colour2,ylab="wartość",  main = paste(input$datasets2,"-", input$regions2))
+    
+  }, height=440, width=1100)
+  
+  
+  #========= Wykres słupkowy ==================================
+  
+  datasetInput3 <- eventReactive(input$update3, {
+    switch(input$datasets3,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie_2012_2019
+    )
+  }, ignoreNULL = FALSE)
+  
+  output$barplot <- renderPlot({
+    datasets3 <- datasetInput3()
+    datasets3 <- na.omit(datasets3)  # mozna uzyc, ale usunie to niektore panstwa/wiersze ktore posiadaja co najmniej 1 wartosc NA
+    datasets3_val <- datasets3[,c(2:ncol(datasets3))]
+    colm3 <-as.numeric(input$var3)
+    # reg <- datasets3$region
+    # col <- datasets3[colm3,]
+    # df <- as.data.frame(reg,col)
+    # names(df) <- c("region", "wartość")
+    
+    top_20_val <- top_n(datasets3_val, 20)
+    top_20 <- top_n(datasets3,20)
+    
+    top_20$region<- reorder(top_20$region, -top_20_val[,colm3])   # sortowanie danych
+
+    col.colors.barplot <- ifelse(top_20$region=='Poland', "gray", input$colour3)
+    top_20 %>%
+      ggplot(aes(x=region, y=top_20_val[,colm3])) +
+      ggtitle(paste(input$datasets3,"(dla 20 najwyższych wartości)")) +
+      geom_bar(stat = "identity", color="black", fill=col.colors.barplot) +
+      geom_text(aes(label = top_20_val[,colm3]), vjust = 1.6, size=5, colour = "black") +
+      scale_x_discrete(guide = guide_axis(n.dodge = 2))  +
+      ylab("wartość") +
+      xlab("") +
+      theme_bw() +
+      theme(axis.text.x = element_text(size = 10),axis.title.x = element_text(size = 13),
+            axis.text.y = element_text(size = 12),axis.title.y = element_text(size = 13),
+            plot.title = element_text(hjust = 0.5, face = "bold", size=14),
+            plot.margin = margin(0.8, 0.2, 1, 0.2, "cm")) 
+
+  },  height=430, width=1100)
+  
+  
+  output$barplot.reg <- renderPlot({
+    datasets3 <- datasetInput3()
+    datasets3 <- na.omit(datasets3)  # mozna uzyc, ale usunie to niektore panstwa/wiersze ktore posiadaja co najmniej 1 wartosc NA
+    datasets3_val <- datasets3[,c(2:ncol(datasets3))]
+    colm3 <-as.numeric(input$var3)
+    
+    EU_zachodnia <- datasets3 %>% filter(region %in% c('Belgium', 'Netherlands', 'Luxembourg',
+                                                       'UK', 'Ireland', 'France'))
+    EU_srodkowa <- datasets3 %>% filter(region %in% c('Austria', 'Czech Republic', 'Germany', 'Hungary',
+                                                      'Liechtenstein', 'Poland', 'Slovakia', 'Slovenia', 'Switzerland'))
+    EU_polnocna <- datasets3 %>% filter(region %in% c('Finland', 'Sweden', 'Iceland', 'Norway',
+                                                      'Denmark' ))
+    EU_wschodnia <- datasets3 %>% filter(region %in% c('Belarus', 'Bulgaria', 'Estonia', 'Lithuania', 'Latvia', 'Moldova',
+                                                       'Romania', 'Ukraine' ))
+    EU_poludniowa <- datasets3 %>% filter(region %in% c('Albania', 'Andorra', 'Bosnia and Herzegovina', 'Croatia', 'Greece', 
+                                                        'Spain', 'North Macedonia', 'Malta', 'Monaco', 'Italy', 'Cyprus', 'Kosovo',
+                                                        'Montenegro', 'Portugal', 'San Marino', 'Serbia', 'Turkey', 'Vatican'))
+    
+    datasetInput_reg <- eventReactive(input$update.reg3, {
+      switch(input$regions3,
+             "Europa zachodnia" = EU_zachodnia,
+             "Europa środkowa" = EU_srodkowa,
+             "Europa północna" = EU_polnocna,
+             "Europa wschodnia" = EU_wschodnia,
+             "Europa południowa" = EU_poludniowa
+      )
+    }, ignoreNULL = FALSE)
+    
+    datasets.reg <- datasetInput_reg()
+    datasets.reg <- na.omit(datasets.reg)
+    datasets.reg_val <- datasets.reg[,c(2:ncol(datasets.reg))]
+    
+    
+    val.reg <- datasets.reg_val[,colm3]
+    reg.reg <- datasets.reg$region
+    df.reg <- data.frame(reg.reg,val.reg)
+    names(df.reg) <- c("region","wartość")
+
+    
+    df.reg$region<- reorder(df.reg$region, -df.reg$wartość)
+    
+    col.colors.barplot <- ifelse(df.reg$region=='Poland', "gray", input$colour3)
+    
+    df.reg %>%
+      ggplot(aes(x=region, y=wartość)) + 
+      ggtitle(paste(input$datasets3,"-", input$regions3)) +
+      geom_bar(stat = "identity", color="black", fill=col.colors.barplot) +
+      geom_text(aes(label = wartość), vjust = 1.6, size=6, colour = "black") +
+      xlab("") +
+      theme_bw() +
+      theme(axis.text.x = element_text(size = 12),axis.title.x = element_text(size = 13), 
+            axis.text.y = element_text(size = 12),axis.title.y = element_text(size = 13),
+            plot.title = element_text(hjust = 0.5, face = "bold", size=14),
+            plot.margin = margin(0.8, 0.2, 0, 0.2, "cm")) 
+   
+    
+  },  height=390, width=1100)
+  
+  
+  
+  # ============ WYkres korelacji
+  datasetInput.k <- eventReactive(input$update.k, {
+    switch(input$datasets.k,
+           "Wskaźnik HDI" = Wskaznik_HDI.36,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat.36,
+           "Ogólne szczęście" = Ogolne_szczescie_2012_2019.36
+    )
+  }, ignoreNULL = FALSE)
+  
+  datasetInput.k2 <- eventReactive(input$update.k, {
+    switch(input$datasets.k2,
+           "Wskaźnik HDI" = Wskaznik_HDI.36,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat.36,
+           "Ogólne szczęście" = Ogolne_szczescie_2012_2019.36
+    )
+  }, ignoreNULL = FALSE)
+  
+  library(calibrate)
+  output$correlationplot <- renderPlot({
+    datasets.k <- datasetInput.k()
+    datasets.k2 <- datasetInput.k2()
+    #datasets.k <- na.omit(datasets.k)
+    #datasets.k2 <- na.omit(datasets.k2)
+    
+    datasets.k_val <- datasets.k[,c(2:ncol(datasets.k))]
+    datasets.k2_val <- datasets.k2[,c(2:ncol(datasets.k2))]
+    colm.k =as.numeric(input$var.k)
+    
+    colors.corrplot <- ifelse(datasets.k$region=='Poland', "black", input$colour.k)
+    
+    x <-datasets.k_val[,colm.k]
+    y <- datasets.k2_val[,colm.k]
+    
+    plot(x, y, pch = 19, cex = 1.8, col = colors.corrplot, cex.lab=1.3, 
+         main=paste("(Oś X)",input$datasets.k,"~","(Oś Y)",input$datasets.k2))
+    abline(lm(y ~ x), col = "red", lwd = 2)
+    text(x, y, labels=ifelse(datasets.k$region=='Poland', 'Polska', ''), cex=1.1, pos=2)
+    
+    #ifelse(datasets.k$region=='Poland',datasets.k$region,'')
+    
+  })
+  
+  
+  output$correlation <- renderPrint({
+    datasets.k <- datasetInput.k()
+    datasets.k2 <- datasetInput.k2()
+    
+    datasets.k_val <- datasets.k[,c(2:ncol(datasets.k))]
+    datasets.k2_val <- datasets.k2[,c(2:ncol(datasets.k2))]
+    colm.k =as.numeric(input$var.k)
+    
+    x <-datasets.k_val[,colm.k]
+    y <- datasets.k2_val[,colm.k]
+    
+    cor <- cor(x, y,  method = "pearson", use = "complete.obs")
+    cat(as.character(unique(paste(round(cor, 3)))))
+    
+  })
+  
+  
+  #========= Mapka ==================================
+  
+  datasetInput5 <- eventReactive(input$update5, {
+    switch(input$datasets5,
+           "Wskaźnik HDI" = Wskaznik_HDI,
+           "PKB na mieszkańca" = PKB_na_mieszkanca,
+           "Współczynnik Giniego" = Wspolczynnik_Giniego,
+           "Śmiertelność niemowląt" = Smiertelnosc_niemowlat,
+           "Ogólne szczęście" = Ogolne_szczescie_2012_2019
+    )
+  }, ignoreNULL = FALSE)
+  
+  output$map <- renderPlotly({
+    datasets5<- datasetInput5()
+    datasets5_val <- datasets5[,c(2:ncol(datasets5))]
+    colm5 =as.numeric(input$var5)
+    val <- datasets5_val[,colm5]
+    reg <- datasets5$region
+    df <- data.frame(reg,val)
+    names(df) <- c("region","wartość")
+    
+    world <- ne_countries(scale = "medium", returnclass = "sf")
+    europe <- world[world$region_un=="Europe"&world$name!="Russia",]
+    
+    colnames(europe)[19] <- "państwo"
+    
+    #zmieniam niektore nazwy panstw w danych ze wspolrzednymi tak by pasowaly do wczesniej ustalonych
+    europe$państwo <- gsub("United Kingdom", "UK", europe$państwo)
+    europe$państwo <- gsub("Republic of Serbia", "Serbia", europe$państwo)
+    europe$państwo <- gsub("Macedonia", "North Macedonia", europe$państwo)
+    
+    
+    europe_df <- europe %>% left_join(df, by=c("państwo"="region"))
+    europe_df <- cbind(europe_df, st_coordinates(st_centroid(europe_df)))
+    
+    p <- ggplot() +
+      #ggtitle(deparse(substitute(datasets5))) +
+      geom_sf(data=europe_df,aes(name=państwo,fill=wartość), inherit.aes=T, color="black", alpha=1) +
+      
+    
+      scale_fill_distiller(name = "Wartość wskaźnika", palette = input$colour5, direction=1) +
+      coord_map(xlim = c(-20, 34),  ylim = c(48, 55)) +
+      
+      theme_bw()
+    
+    
+    ggplotly(p)
+    
+    
+  })
+  
+}
+
+
+shinyApp(ui, server)
+
+
